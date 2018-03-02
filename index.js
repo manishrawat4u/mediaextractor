@@ -24,12 +24,30 @@ function getRandomRolor() {
     return rgb;
 }
 
+function absolute(base, relative) {
+    var stack = base.split("/"),
+        parts = relative.split("/");
+    stack.pop(); // remove current file name (or empty string)
+    // (omit if "base" is the current folder without trailing slash)
+    for (var i = 0; i < parts.length; i++) {
+        if (parts[i] == ".")
+            continue;
+        if (parts[i] == "..")
+            stack.pop();
+        else
+            stack.push(parts[i]);
+    }
+    return stack.join("/");
+}
+
 io.on('connection', function (socket) {
     console.log('a user connected');
     socket.on('disconnect', function () {
         console.log('user disconnected');
     });
     socket.on('message', async function (data) {
+        var listOfUrl=[];
+        listOfUrl.push(data);
         var tag = JSON.stringify(data);
         var tagColor = getRandomRolor();
         function sendToClient(message, url) {
@@ -48,7 +66,16 @@ io.on('connection', function (socket) {
         if (response) {
             var $ = cheerio.load(response.body);
             $('a').each(function (i, link) {
-                sendToClient($(link).text(), $(link).attr('href'));
+                var linkHref = $(link).attr('href');
+                if (linkHref && !linkHref.startsWith('#')) {
+                    if (linkHref.startsWith('http://') || linkHref.startsWith('https://') || linkHref.startsWith('//')) {
+                        //do nothing
+                    }
+                    else {
+                        linkHref = absolute(data, linkHref);
+                    }
+                    !listOfUrl.includes(linkHref) && listOfUrl.push(linkHref) &&sendToClient($(link).text(), linkHref);
+                }
             });
             console.log('a message recvd...');
             sendToClient('Completed...');
@@ -64,16 +91,16 @@ http.listen(port, function () {
 
 function normalizePort(val) {
     var port = parseInt(val, 10);
-  
+
     if (isNaN(port)) {
-      // named pipe
-      return val;
+        // named pipe
+        return val;
     }
-  
+
     if (port >= 0) {
-      // port number
-      return port;
+        // port number
+        return port;
     }
-  
+
     return false;
-  }
+}
