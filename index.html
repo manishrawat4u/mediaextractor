@@ -71,6 +71,7 @@
     <script>
         $(function () {
             var socket = io();
+
             $('form').submit(function () {
                 socket.emit('message', $('#m').val());
                 $('#m').val('');
@@ -80,8 +81,17 @@
                 $('#messages').empty();
             });
             socket.on('message', function (data) {
+
                 var el = $('<li></li>').text(data.tag + ' : ' + data.message + (data.url ? ' : ' + data.url : '')).css('color', data.tagColor);
+                if (data.knownProvider) {
+                    el.css('background-color', 'yellow');
+                    el.append($('<a target="_blank"></a>').text('download').attr('href', '/download?q=' + encodeURIComponent(data.url)));
+                }
+
+
+
                 if (data.url) {
+
                     el.click(function () {
                         $('#m').val(data.url);
                         $('#m').focus();
