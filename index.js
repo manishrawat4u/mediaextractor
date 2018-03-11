@@ -321,6 +321,7 @@ var knownProviders = [
 
 io.on('connection', function (socket) {
     var ignoreList = [];
+    var NEST_LEVEL = 1;
     console.log('a user connected');
     socket.on('disconnect', function () {
         console.log('user disconnected');
@@ -335,20 +336,27 @@ io.on('connection', function (socket) {
     })
     socket.on('message', async function (data) {
         var listOfUrl = [];
-
+        var tag = JSON.stringify(data);
+        var tagColor = getRandomColor();
+        
         if (data.startsWith('--search ')) {
             var q = data.substr(9);
             knownWebsitesToCrawl.forEach(x => {
                 listOfUrl.push(util.format(x.search, q));
             });
+            sendToClient('Query: ' + q + ', Nest Level: ' + NEST_LEVEL);
+        }
+        else if (data.startsWith('--nest ')) {
+            var q = data.substr(7);
+            NEST_LEVEL = parseInt(q);
+            sendToClient('Nested level set to : ' + NEST_LEVEL);
         }
         else {
             listOfUrl.push(data);
+            sendToClient('Received Url: ' + data + ', Nest Level: ' + NEST_LEVEL);
         }
 
 
-        var tag = JSON.stringify(data);
-        var tagColor = getRandomColor();
         function sendToClient(message, targetLink) {
             var objectToSend = {
                 tag: tag,
@@ -365,14 +373,35 @@ io.on('connection', function (socket) {
             }
             socket.emit('message', objectToSend);
         }
-        sendToClient('Recieved...');
 
-        listOfUrl.forEach(async function (x) {
-            var response = await got(x).catch(() => {
-                sendToClient('Error...');
+        async function scrapeIt(x, nestLevel) {
+            nestLevel = nestLevel - 1;
+            async function gethtmlonly() {
+                var downloadeddata = '';
+                var streamRequest;
+                return new Promise((resolve, reject) => {
+                    got.stream(x).on('response', function (r) {
+                        if (r.headers['content-type'] && r.headers['content-type'].startsWith('text')) {
+                            //sendToClient(r.headers["content-type"]);
+                        } else {
+                            streamRequest.abort();
+                            reject('Invalid content type : ' + (r.headers['content-type'] || ''));
+                        }
+                    }).on('data', function (buffer) {
+                        downloadeddata += buffer;
+                    }).on('request', req => {
+                        streamRequest = req;
+                    }).on('end', function () {
+                        resolve(downloadeddata);
+                    });
+                });
+            };
+            var response = await gethtmlonly().catch((err) => {
+                sendToClient('Error...' + err);
             });
+
             if (response) {
-                var $ = cheerio.load(response.body);
+                var $ = cheerio.load(response);
                 $('a,iframe').each(function (i, link) {
                     var linkHref
                     switch (link.name.toLowerCase()) {
@@ -391,13 +420,22 @@ io.on('connection', function (socket) {
                         else {
                             linkHref = absolute(x, linkHref);
                         }
-                        !listOfUrl.includes(linkHref) && listOfUrl.push(linkHref) && sendToClient($(link).text(), linkHref);
+                        if (!listOfUrl.includes(linkHref)) {
+                            listOfUrl.push(linkHref) && sendToClient($(link).text(), linkHref);
+                            if (nestLevel >= 1) {
+                                scrapeIt(linkHref, nestLevel - 1);
+                            }
+                        }
                     }
                 });
                 console.log('a message recvd...');
                 sendToClient('Completed...');
             }
-        });
+        }
+
+        
+
+        listOfUrl.forEach(x => scrapeIt(x, NEST_LEVEL));
 
     });
 });
