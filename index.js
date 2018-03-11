@@ -19,6 +19,7 @@ app.get('/download', async function (req, res) {
         case 'userscloud.com':
         case 'uptobox.com':
         case 'uppit.com':
+        case '9xupload.me':
             var response = await indishareDownload(q);
             res.end(response || 'error');
             break;
@@ -55,6 +56,11 @@ app.get('/download', async function (req, res) {
             break;
         case 'turbobit.net':
             res.end('Not supported!!!');
+            break;
+        case 'clicknupload.org':
+            var response = await clicknuploadDownload(q);
+            res.end(response || 'error');
+            break;
         default:
             var response = await got(q).catch(() => {
                 //do nothing;
@@ -153,6 +159,53 @@ async function indishareDownload(q) {
         return null;
     }
 }
+
+async function clicknuploadDownload(q) {
+    var response = await got(q).catch(() => {
+        //do nothing;
+    });
+    if (response) {
+        const form = {};
+        var $ = cheerio.load(response.body);
+        $("input", "form").each((i, e) => {
+            if (e.attribs.name == 'op') {
+                form[e.attribs.name] = 'download2';
+            }
+            else {
+                form[e.attribs.name] = e.attribs.value;
+            }
+        });
+
+        var innerResponse = await got.post(q, {
+            body: form,
+            form: true
+        });
+
+        if (innerResponse) {
+            $ = cheerio.load(innerResponse.body);
+            var divElement = $('<div></div>');
+
+            var clickAttr = $('#downloadbtn').attr('onclick');
+
+            if (clickAttr && clickAttr.split("'")[1]) {
+                var finalDwldLink = clickAttr.split("'")[1];
+                divElement.append($('<a></a>').attr('href', '/proxy?q=' + encodeURIComponent(finalDwldLink)).text(finalDwldLink)).append('<br/>');
+            }
+
+            $('a').each((i, e) => {
+                divElement.append($('<a></a>').attr('href', '/proxy?q=' + encodeURIComponent(e.attribs.href)).text(e.attribs.href)).append('<br/>');
+            });
+
+            return '<html><body>' + divElement.toString() + '<script></script></body></html>';
+        } else {
+            return null;
+        }
+    }
+    else {
+        return null;
+    }
+}
+
 
 async function streamYourFileDownload(q) {
     var response = await got(q).catch(() => {
