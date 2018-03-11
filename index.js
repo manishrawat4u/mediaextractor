@@ -5,7 +5,7 @@ var got = require('got');
 var cheerio = require('cheerio');
 var URL = require('url');
 const QueryString = require('querystring');
-
+var util = require('util');
 app.get('/', function (req, res) {
     res.sendFile(__dirname + '/index.html');
 });
@@ -222,6 +222,10 @@ function getRandomColor() {
 }
 
 function absolute(base, relative) {
+    if (relative.startsWith('/')) {
+        return base.split('/', 3).join('/') + relative;
+    }
+
     var stack = base.split("/"),
         parts = relative.split("/");
     stack.pop(); // remove current file name (or empty string)
@@ -263,13 +267,33 @@ var knownProviders = [
     , 'openload.co'];
 
 io.on('connection', function (socket) {
+    var ignoreList = [];
     console.log('a user connected');
     socket.on('disconnect', function () {
         console.log('user disconnected');
     });
+    socket.on('initialize', function (hostArray) {
+        if (hostArray && hostArray instanceof Array) {
+            ignoreList = hostArray;
+        }
+    });
+    socket.on('addToIgnoreList', function (hostname) {
+        hostname && !ignoreList.includes(hostname) && ignoreList.push(hostname);
+    })
     socket.on('message', async function (data) {
         var listOfUrl = [];
-        listOfUrl.push(data);
+
+        if (data.startsWith('--search ')) {
+            var q = data.substr(9);
+            knownWebsitesToCrawl.forEach(x => {
+                listOfUrl.push(util.format(x.search, q));
+            });
+        }
+        else {
+            listOfUrl.push(data);
+        }
+
+
         var tag = JSON.stringify(data);
         var tagColor = getRandomColor();
         function sendToClient(message, targetLink) {
@@ -280,6 +304,7 @@ io.on('connection', function (socket) {
             };
             var knownProvider = false;
             if (targetLink) {
+                if (ignoreList.includes(URL.parse(targetLink).hostname)) return;
                 objectToSend.url = targetLink;
                 if (knownProviders.includes(URL.parse(targetLink).hostname)) {
                     objectToSend.knownProvider = true;
@@ -289,26 +314,38 @@ io.on('connection', function (socket) {
         }
         sendToClient('Recieved...');
 
-        var response = await got(data).catch(() => {
-            sendToClient('Error...');
-        });
-        if (response) {
-            var $ = cheerio.load(response.body);
-            $('a').each(function (i, link) {
-                var linkHref = $(link).attr('href');
-                if (linkHref && !linkHref.startsWith('#')) {
-                    if (linkHref.startsWith('http://') || linkHref.startsWith('https://') || linkHref.startsWith('//')) {
-                        //do nothing
-                    }
-                    else {
-                        linkHref = absolute(data, linkHref);
-                    }
-                    !listOfUrl.includes(linkHref) && listOfUrl.push(linkHref) && sendToClient($(link).text(), linkHref);
-                }
+        listOfUrl.forEach(async function (x) {
+            var response = await got(x).catch(() => {
+                sendToClient('Error...');
             });
-            console.log('a message recvd...');
-            sendToClient('Completed...');
-        }
+            if (response) {
+                var $ = cheerio.load(response.body);
+                $('a,iframe').each(function (i, link) {
+                    var linkHref
+                    switch (link.name.toLowerCase()) {
+                        case 'a':
+                            linkHref = $(link).attr('href');
+                            break;
+                        case 'iframe':
+                            linkHref = $(link).attr('src');
+                            break;
+                        default:
+                    }
+                    if (linkHref && !linkHref.startsWith('#')) {
+                        if (linkHref.startsWith('http://') || linkHref.startsWith('https://') || linkHref.startsWith('//')) {
+                            //do nothing
+                        }
+                        else {
+                            linkHref = absolute(x, linkHref);
+                        }
+                        !listOfUrl.includes(linkHref) && listOfUrl.push(linkHref) && sendToClient($(link).text(), linkHref);
+                    }
+                });
+                console.log('a message recvd...');
+                sendToClient('Completed...');
+            }
+        });
+
     });
 });
 
@@ -333,3 +370,24 @@ function normalizePort(val) {
 
     return false;
 }
+
+var knownWebsitesToCrawl = [{
+    url: 'http://digibolly.se',
+    search: 'http://digibolly.se/?s=%s'
+},
+{
+    url: 'https://bolly4u.link',
+    search: 'https://bolly4u.link/?s=%s'
+},
+{
+    url: 'https://www.worldfree4u.ws',
+    search: 'https://www.worldfree4u.ws/search/%s'
+},
+{
+    url: 'https://www.hindilinks4u.to',
+    search: 'https://www.hindilinks4u.to/?s=%s'
+},
+{
+    url: 'https://moviefishers.me/',
+    search: 'https://moviefishers.me/?s=%s'
+}];

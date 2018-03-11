@@ -3,6 +3,8 @@
 
 <head>
     <title>Media extractor tool</title>
+    <link href="http://maxcdn.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css" rel="stylesheet">
+
     <style>
         * {
             margin: 0;
@@ -52,6 +54,15 @@
         #messages li:nth-child(odd) {
             background: #eee;
         }
+
+        #messages li i {
+            display: none;
+        }
+
+        #messages li:hover i {
+            display: inline;
+            cursor: pointer;
+        }
     </style>
 </head>
 
@@ -89,8 +100,13 @@
                 }
 
 
-
                 if (data.url) {
+                    var hostname = new URL(data.url).hostname;
+                    el.prop('data-hostname', hostname);
+                    el.append($('<i class="fa fa-ban" title="Add to ignore list"></i>').click(function (ev) {
+                        ev.stopPropagation();
+                        addToIgnoreList(hostname);
+                    }));
 
                     el.click(function () {
                         $('#m').val(data.url);
@@ -100,6 +116,30 @@
 
                 $('#messages').prepend(el);
             });
+
+            var ignoreList = JSON.parse(localStorage.getItem("ignoreList")) || [];
+
+            function addToIgnoreList(hostname) {
+                if (!ignoreList.includes(hostname)) {
+                    if (confirm('Are you sure you want to set "' + hostname + '" in your ignore list?')) {
+                        ignoreList.push(hostname);
+                        localStorage.setItem("ignoreList", JSON.stringify(ignoreList));
+                        socket.emit('addToIgnoreList', hostname);
+                        clearHostnameFromExistingList(hostname);
+                    }
+                }
+            }
+
+            function clearHostnameFromExistingList(hostname) {
+                document.querySelectorAll('li').forEach(x => {
+                    if ($(x).prop('data-hostname') == hostname) {
+                        x.remove();
+                    }
+                });
+            }
+
+            socket.emit('initialize', ignoreList);
+
             $('#m').focus();
         });
     </script>
