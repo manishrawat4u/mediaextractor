@@ -6,6 +6,7 @@
   "dependencies": {
     "cheerio": "^1.0.0-rc.2",
     "express": "^4.16.2",
+    "form-data": "^2.3.2",
     "got": "^8.2.0",
     "socket.io": "^2.0.4"
   },
