@@ -6,6 +6,17 @@ var cheerio = require('cheerio');
 var URL = require('url');
 const QueryString = require('querystring');
 var util = require('util');
+
+// Handle errors
+app.use((err, req, res, next) => {
+    if (! err) {
+        return next();
+    }
+
+    res.status(500);
+    res.send('500: Internal server error');
+});
+
 app.get('/', function (req, res) {
     res.sendFile(__dirname + '/index.html');
 });
@@ -61,6 +72,10 @@ app.get('/download', async function (req, res) {
             var response = await clicknuploadDownload(q);
             res.end(response || 'error');
             break;
+        case 'openload.co':
+            var response = await openloadDownload(q);
+            res.end(response || 'error');
+            break;
         default:
             var response = await got(q).catch(() => {
                 //do nothing;
@@ -86,6 +101,28 @@ app.get('/proxy', function (req, res) {
     }).pipe(res);
 });
 
+async function openloadDownload(q) {
+    var response = await got(q).catch(() => {
+        //do nothing;
+    });
+    if (response) {
+        var rx=/var suburl .*;/
+        var $ = cheerio.load(response.body);
+        eval(rx.exec(response.body)[0])
+        var downloadLocation = $('a.btn-dl-plus').attr('href');
+
+        var innerResponse = await got(downloadLocation).catch(() => {
+
+        });
+        if (innerResponse) {
+            $ = cheerio.load(innerResponse.body);
+        }
+        return null;
+    } else {
+        return null;
+    }
+}
+
 async function uplodCCDownload(q) {
     var response = await got(q).catch(() => {
         //do nothing;
@@ -100,6 +137,9 @@ async function uplodCCDownload(q) {
         if (innerResponse) {
             $ = cheerio.load(innerResponse.body);
         }
+        return null;
+    } else {
+        return null;
     }
 }
 
@@ -338,7 +378,7 @@ io.on('connection', function (socket) {
         var listOfUrl = [];
         var tag = JSON.stringify(data);
         var tagColor = getRandomColor();
-        
+
         if (data.startsWith('--search ')) {
             var q = data.substr(9);
             knownWebsitesToCrawl.forEach(x => {
@@ -433,7 +473,7 @@ io.on('connection', function (socket) {
             }
         }
 
-        
+
 
         listOfUrl.forEach(x => scrapeIt(x, NEST_LEVEL));
 
