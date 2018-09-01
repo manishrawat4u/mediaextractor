@@ -433,6 +433,9 @@ io.on('connection', function (socket) {
                         streamRequest = req;
                     }).on('end', function () {
                         resolve(downloadeddata);
+                    }).on('error',function(){
+                        console.log('error occurred while streaming ' + x);
+                        reject('Error occurrect while streaming ' + x);
                     });
                 });
             };
