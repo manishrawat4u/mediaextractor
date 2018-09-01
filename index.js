@@ -6,10 +6,10 @@ var cheerio = require('cheerio');
 var URL = require('url');
 const QueryString = require('querystring');
 var util = require('util');
-
+const DEFAULT_NEST_LEVEL = 3;
 // Handle errors
 app.use((err, req, res, next) => {
-    if (! err) {
+    if (!err) {
         return next();
     }
 
@@ -86,6 +86,42 @@ app.get('/download', async function (req, res) {
     }
 });
 
+app.get('/parsescript', async function (req, res) {
+    var q = req.query.q;
+    var response = await got(q).catch(() => {
+        //do nothing;
+    });
+    if (response) {
+        var s = '';
+        var rx = /var suburl .*;/
+        var $ = cheerio.load(response.body);
+
+        $("script:not([src])").each((ix, el) => {
+            var script = el.childNodes[0].data;
+
+
+            s = s + '<textarea>' + script + '</textarea>';
+
+        })
+
+        // $("script:not([src])")[8].childNodes[0]
+
+        // var lnk = eval(rx.exec(response.body)[0]);
+        // var downloadLocation = $('a.btn-dl-plus').attr('href');
+
+        // var innerResponse = await got(downloadLocation).catch(() => {
+
+        // });
+        // if (innerResponse) {
+        //     $ = cheerio.load(innerResponse.body);
+        // }
+        // return null;
+        res.send(s);
+    } else {
+        return null;
+    }
+})
+
 app.get('/proxy', function (req, res) {
     var reqheaders = {};
     for (h in req.headers) {
@@ -106,9 +142,9 @@ async function openloadDownload(q) {
         //do nothing;
     });
     if (response) {
-        var rx=/var suburl .*;/
+        var rx = /var suburl .*;/
         var $ = cheerio.load(response.body);
-        eval(rx.exec(response.body)[0])
+        var lnk = eval(rx.exec(response.body)[0]);
         var downloadLocation = $('a.btn-dl-plus').attr('href');
 
         var innerResponse = await got(downloadLocation).catch(() => {
@@ -357,11 +393,12 @@ var knownProviders = [
     , 'www.w4links.site'
     , 'www.flashx.tv'
     , '9xplay.live'
-    , 'openload.co'];
+    , 'openload.co'
+    , 'streamango.com'];
 
 io.on('connection', function (socket) {
     var ignoreList = [];
-    var NEST_LEVEL = 1;
+    var NEST_LEVEL = DEFAULT_NEST_LEVEL;
     console.log('a user connected');
     socket.on('disconnect', function () {
         console.log('user disconnected');
@@ -376,6 +413,7 @@ io.on('connection', function (socket) {
     })
     socket.on('message', async function (data) {
         var listOfUrl = [];
+        var formDataCollection = [];
         var tag = JSON.stringify(data);
         var tagColor = getRandomColor();
 
@@ -390,6 +428,12 @@ io.on('connection', function (socket) {
             var q = data.substr(7);
             NEST_LEVEL = parseInt(q);
             sendToClient('Nested level set to : ' + NEST_LEVEL);
+        }
+        else if (data.startsWith('--help')) {
+            sendToClient('Available commands : --help, --nest, --search');
+            sendToClient('--help: List the help menu');
+            sendToClient('--nest: Set the nest level of the scraping. Default is set to ' + DEFAULT_NEST_LEVEL);
+            sendToClient('--search: type in search command to search any movie');
         }
         else {
             listOfUrl.push(data);
@@ -420,7 +464,18 @@ io.on('connection', function (socket) {
                 var downloadeddata = '';
                 var streamRequest;
                 return new Promise((resolve, reject) => {
-                    got.stream(x).on('response', function (r) {
+                    var options = {};
+                    if (formDataCollection[x]) {
+                        options.method = "POST";
+                        sendToClient('POST URL found... ' + x);
+                        console.log('POST URL found... ' + x);
+                    }
+                    else {
+                        options.method = "GET";
+                    }
+
+                    formDataCollection[x] && (options.body = formDataCollection[x]);
+                    got.stream(x, options).on('response', function (r) {
                         if (r.headers['content-type'] && r.headers['content-type'].startsWith('text')) {
                             //sendToClient(r.headers["content-type"]);
                         } else {
@@ -433,7 +488,7 @@ io.on('connection', function (socket) {
                         streamRequest = req;
                     }).on('end', function () {
                         resolve(downloadeddata);
-                    }).on('error',function(){
+                    }).on('error', function () {
                         console.log('error occurred while streaming ' + x);
                         reject('Error occurrect while streaming ' + x);
                     });
@@ -445,8 +500,8 @@ io.on('connection', function (socket) {
 
             if (response) {
                 var $ = cheerio.load(response);
-                $('a,iframe').each(function (i, link) {
-                    var linkHref
+                $('a,iframe,form').each(function (i, link) {
+                    var linkHref, formData;
                     switch (link.name.toLowerCase()) {
                         case 'a':
                             linkHref = $(link).attr('href');
@@ -454,16 +509,36 @@ io.on('connection', function (socket) {
                         case 'iframe':
                             linkHref = $(link).attr('src');
                             break;
+                        case 'form':
+                            sendToClient('form field found...');
+                            if (link.attribs["method"]) {
+                                formData = serializeForm(link);
+                                if (formData) {
+                                    linkHref = "";
+                                    if (link.attribs["action"]) {
+                                        linkHref = link.attribs["action"];
+                                    }
+                                }
+                            }
+                            break;
                         default:
                     }
-                    if (linkHref && !linkHref.startsWith('#')) {
+                    if ((linkHref && !linkHref.startsWith('#')) || formData) {
                         if (linkHref.startsWith('http://') || linkHref.startsWith('https://') || linkHref.startsWith('//')) {
                             //do nothing
                         }
                         else {
                             linkHref = absolute(x, linkHref);
                         }
-                        if (!listOfUrl.includes(linkHref)) {
+                        var continueProcessing = false;
+                        //todo: formdatacollection optimization
+                        //if (formData && !formDataCollection[linkHref]) {
+                        if (formData) {
+                            formDataCollection[linkHref] = formData;
+                            continueProcessing = true;
+                        }
+
+                        if (!listOfUrl.includes(linkHref) || continueProcessing) {
                             listOfUrl.push(linkHref) && sendToClient($(link).text(), linkHref);
                             if (nestLevel >= 1) {
                                 scrapeIt(linkHref, nestLevel - 1);
@@ -505,24 +580,57 @@ function normalizePort(val) {
     return false;
 }
 
-var knownWebsitesToCrawl = [{
-    url: 'http://digibolly.se',
-    search: 'http://digibolly.se/?s=%s'
-},
-{
-    url: 'https://bolly4u.link',
-    search: 'https://bolly4u.link/?s=%s'
-},
-{
-    url: 'https://www.worldfree4u.ws',
-    search: 'https://www.worldfree4u.ws/search/%s'
-},
-{
-    url: 'https://www.hindilinks4u.to',
-    search: 'https://www.hindilinks4u.to/?s=%s'
+function isEmpty(obj) {
+    for (var key in obj) {
+        if (obj.hasOwnProperty(key))
+            return false;
+    }
+    return true;
 }
-// ,{
-//     url: 'https://moviefishers.me/',
-//     search: 'https://moviefishers.me/?s=%s'
-// }
+
+function serializeForm(l) {
+    //pull down all black domains here
+    if (l.attribs.action && l.attribs.action.startsWith("https://feedburner.google.com"))
+        return null;
+    const form = {};
+    cheerio("input", l).each((i, e) => {
+        if (e.attribs.name) {
+            form[e.attribs.name] = e.attribs.value;
+        }
+    });
+    if (!isEmpty(form)) {
+        return form;
+    }
+
+}
+
+var knownWebsitesToCrawl = [
+    {
+        url: 'http://digibolly.se',
+        search: 'http://digibolly.se/?s=%s'
+    }
+    // {
+    //     url: 'https://bolly4u.link',
+    //     search: 'https://bolly4u.link/?s=%s'
+    // },
+    // {
+    //     url: 'https://www.worldfree4u.ws',
+    //     search: 'https://www.worldfree4u.ws/search/%s'
+    // },
+    // {
+    //     url: 'https://www.hindilinks4u.to',
+    //     search: 'https://www.hindilinks4u.to/?s=%s'
+    // },
+    // {
+    //     url: 'https://pahe.in',
+    //     search: 'https://pahe.in/?s=%s'
+    // }
+    , {
+        url: 'http://www.watchonlinemovies.com.pk',
+        search: 'http://www.watchonlinemovies.com.pk/?s=%s'
+    }
+    // ,{
+    //     url: 'https://moviefishers.me/',
+    //     search: 'https://moviefishers.me/?s=%s'
+    // }
 ];
