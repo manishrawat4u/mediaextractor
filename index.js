@@ -520,8 +520,9 @@ var knownWebsitesToCrawl = [{
 {
     url: 'https://www.hindilinks4u.to',
     search: 'https://www.hindilinks4u.to/?s=%s'
-},
-{
-    url: 'https://moviefishers.me/',
-    search: 'https://moviefishers.me/?s=%s'
-}];
+}
+// ,{
+//     url: 'https://moviefishers.me/',
+//     search: 'https://moviefishers.me/?s=%s'
+// }
+];
