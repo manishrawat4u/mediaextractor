@@ -629,8 +629,16 @@ var knownWebsitesToCrawl = [
         url: 'http://www.watchonlinemovies.com.pk',
         search: 'http://www.watchonlinemovies.com.pk/?s=%s'
     }
+    ,{
+        url:'http://moviehax.blogspot.com',
+        search:'http://moviehax.blogspot.com'
+    }
     // ,{
     //     url: 'https://moviefishers.me/',
     //     search: 'https://moviefishers.me/?s=%s'
+    // }
+    //{
+    //     http://www.drive4movies.com/2018/03/15/raid-2018/
+    //https://muvshub.blogspot.com/
     // }
 ];
